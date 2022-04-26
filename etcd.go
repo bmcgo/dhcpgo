@@ -4,6 +4,7 @@ import (
 	"context"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"net"
 	"time"
 )
 
@@ -16,11 +17,14 @@ type EtcdClientConfig struct {
 }
 
 type EtcdClient struct {
-	client     *clientv3.Client
+	client *clientv3.Client
+	leases map[string]Lease
 }
 
-func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout  time.Duration) (*EtcdClient, error) {
-	client := &EtcdClient{}
+func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
+	client := &EtcdClient{
+		leases: make(map[string]Lease),
+	}
 	tlsInfo := transport.TLSInfo{
 		CertFile:      c.certPath,
 		KeyFile:       c.keyPath,
@@ -44,4 +48,21 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout  time.Durat
 	ct, cf := context.WithTimeout(ctx, timeout)
 	defer cf()
 	return client, client.client.Sync(ct)
+}
+
+func (c *EtcdClient) GetLease(mac net.HardwareAddr) *Lease {
+	lease, ok := c.leases[mac.String()]
+	if ok {
+		return &lease
+	}
+	return nil
+}
+
+func (c *EtcdClient) GetFreeIP() {
+
+}
+
+func (c *EtcdClient) UpdateLease(mac net.HardwareAddr, lease Lease) error {
+	c.leases[mac.String()] = lease
+	return nil
 }
