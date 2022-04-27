@@ -20,7 +20,7 @@ func main() {
 	flag.StringVar(&config.keyPath, "etcd-key", "", "etcd tls key")
 	flag.StringVar(&config.certPath, "etcd-cert", "", "etcd tls cert")
 	flag.StringVar(&config.caCertPath, "etcd-ca", "", "etcd tls ca")
-	flag.StringVar(&config.prefix, "etcd-path", "dhcpg", "etcd prefix for data")
+	flag.StringVar(&config.prefix, "etcd-path", "/dhcpg", "etcd prefix for data")
 	flag.Parse()
 
 	if config.keyPath == "" || config.certPath == "" || config.caCertPath == "" || config.prefix == "" || endpoints == "" {
@@ -33,6 +33,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to connect: %s", err)
 	}
+
+	etcd.WatchConfig(context.Background())
 
 	iface, err := net.InterfaceByName("br0")
 	if err != nil {

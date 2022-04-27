@@ -4,7 +4,9 @@ import (
 	"context"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"log"
 	"net"
+	"path"
 	"time"
 )
 
@@ -18,12 +20,14 @@ type EtcdClientConfig struct {
 
 type EtcdClient struct {
 	client *clientv3.Client
+	prefix string
 	leases map[string]Lease
 }
 
 func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
 	client := &EtcdClient{
 		leases: make(map[string]Lease),
+		prefix: c.prefix,
 	}
 	tlsInfo := transport.TLSInfo{
 		CertFile:      c.certPath,
@@ -48,6 +52,29 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	ct, cf := context.WithTimeout(ctx, timeout)
 	defer cf()
 	return client, client.client.Sync(ct)
+}
+
+func (c *EtcdClient) WatchConfig(ctx context.Context) {
+	prefix := path.Join("/", c.prefix, "v1", "config")
+	log.Printf("Watching config with prefix: %s", prefix)
+	resp, err := c.client.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		log.Printf("Failed to list config prefix: %s", err)
+		return
+	}
+	for _, kv := range resp.Kvs {
+		log.Println(kv)
+	}
+	ch := c.client.Watch(ctx, prefix, clientv3.WithPrefix())
+	for {
+		resp, ok := <- ch
+		log.Println(resp)
+		log.Println(ok)
+		if !ok {
+			log.Println("Config watcher stopped")
+			return
+		}
+	}
 }
 
 func (c *EtcdClient) GetLease(mac net.HardwareAddr) *Lease {

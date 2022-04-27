@@ -39,8 +39,8 @@ run-etcd: etcd-cert
 		--client-cert-auth \
 		--key-file dev/ca/etcd-key.pem
 
-run-dhcpg:
-	sudo ./dhcpg \
+run-dhcpgo:
+	./dhcpgo \
 		--etcd-ca dev/ca/ca.pem \
 		--etcd-key dev/ca/client-key.pem \
 		--etcd-cert dev/ca/client-cert.pem \
