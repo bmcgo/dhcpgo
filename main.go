@@ -34,7 +34,9 @@ func main() {
 		log.Fatalf("unable to connect: %s", err)
 	}
 
-	etcd.WatchConfig(context.Background())
+	manager := NewServerManager(etcd)
+
+	etcd.WatchConfig(context.Background(), manager)
 
 	iface, err := net.InterfaceByName("br0")
 	if err != nil {

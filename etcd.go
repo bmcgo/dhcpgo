@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"log"
@@ -54,22 +55,39 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	return client, client.client.Sync(ct)
 }
 
-func (c *EtcdClient) WatchConfig(ctx context.Context) {
-	prefix := path.Join("/", c.prefix, "v1", "config")
-	log.Printf("Watching config with prefix: %s", prefix)
-	resp, err := c.client.Get(ctx, prefix, clientv3.WithPrefix())
+func (c *EtcdClient) processSubnets(ctx context.Context, prefix string, handler ConfigWatchHandler) {
+	resp, err := c.client.Get(ctx, path.Join(prefix, "subnets"), clientv3.WithPrefix())
 	if err != nil {
 		log.Printf("Failed to list config prefix: %s", err)
 		return
 	}
 	for _, kv := range resp.Kvs {
-		log.Println(kv)
+		s := Subnet{}
+		err = json.Unmarshal(kv.Value, &s)
+		if err != nil {
+			log.Printf("failed to unmarshal subnet %q", kv.Key)
+		} else {
+			s.Key = string(kv.Key)
+			err = handler.HandleSubnet(s)
+			if err != nil {
+				log.Printf("error handling subnet %q, %s", kv.Key, err)
+			}
+		}
 	}
+}
+
+func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler) {
+	prefix := path.Join("/", c.prefix, "v1", "config")
+	log.Printf("Watching config with prefix: %s", prefix)
+
+	c.processSubnets(ctx, prefix, handler)
+
 	ch := c.client.Watch(ctx, prefix, clientv3.WithPrefix())
 	for {
 		resp, ok := <- ch
-		log.Println(resp)
-		log.Println(ok)
+		for _, ev := range resp.Events {
+			log.Println(ev)
+		}
 		if !ok {
 			log.Println("Config watcher stopped")
 			return
