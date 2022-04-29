@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"log"
@@ -20,15 +21,36 @@ type EtcdClientConfig struct {
 }
 
 type EtcdClient struct {
-	client *clientv3.Client
-	prefix string
-	leases map[string]Lease
+	client             *clientv3.Client
+	leases             map[string]Lease
+	prefix             string
+	prefixConfigSubnet string
+	prefixLeases       string
+}
+
+type Option struct {
+	ID    uint8  `json:"id"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type Subnet struct {
+	Key         string
+	Interface   string   `json:"interface"`
+	AddressMask string   `json:"addressMask"`
+	RangeFrom   string   `json:"rangeFrom"`
+	RangeTo     string   `json:"rangeTo"`
+	Gateway     string   `json:"gateway"`
+	DNS         []string `json:"dns"`
+	Options     []Option `json:"options"`
 }
 
 func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
+	prefix := path.Join("/", c.prefix, "v1")
 	client := &EtcdClient{
 		leases: make(map[string]Lease),
-		prefix: c.prefix,
+		prefix: prefix,
+		prefixConfigSubnet: path.Join(prefix, "subnet"),
 	}
 	tlsInfo := transport.TLSInfo{
 		CertFile:      c.certPath,
@@ -55,11 +77,10 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	return client, client.client.Sync(ct)
 }
 
-func (c *EtcdClient) processSubnets(ctx context.Context, prefix string, handler ConfigWatchHandler) {
-	resp, err := c.client.Get(ctx, path.Join(prefix, "subnets"), clientv3.WithPrefix())
+func (c *EtcdClient) processSubnets(ctx context.Context, handler ConfigWatchHandler) error {
+	resp, err := c.client.Get(ctx, c.prefixConfigSubnet, clientv3.WithPrefix())
 	if err != nil {
-		log.Printf("Failed to list config prefix: %s", err)
-		return
+		return fmt.Errorf("failed to list config prefix: %s", err)
 	}
 	for _, kv := range resp.Kvs {
 		s := Subnet{}
@@ -74,17 +95,18 @@ func (c *EtcdClient) processSubnets(ctx context.Context, prefix string, handler 
 			}
 		}
 	}
+	return nil
 }
 
 func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler) {
-	prefix := path.Join("/", c.prefix, "v1", "config")
-	log.Printf("Watching config with prefix: %s", prefix)
-
-	c.processSubnets(ctx, prefix, handler)
-
-	ch := c.client.Watch(ctx, prefix, clientv3.WithPrefix())
+	log.Printf("Watching config with prefix: %s", c.prefix)
+	err := c.processSubnets(ctx, handler)
+	if err != nil {
+		log.Println(err)
+	}
+	ch := c.client.Watch(ctx, c.prefixConfigSubnet, clientv3.WithPrefix())
 	for {
-		resp, ok := <- ch
+		resp, ok := <-ch
 		for _, ev := range resp.Events {
 			log.Println(ev)
 		}
@@ -110,4 +132,17 @@ func (c *EtcdClient) GetFreeIP() {
 func (c *EtcdClient) UpdateLease(mac net.HardwareAddr, lease Lease) error {
 	c.leases[mac.String()] = lease
 	return nil
+}
+
+func (c *EtcdClient) PutSubnet(ctx context.Context, sn Subnet) error {
+	data, err := json.Marshal(sn)
+	if err != nil {
+		return err
+	}
+	p := path.Join(c.prefixConfigSubnet, sn.AddressMask)
+	resp, err := c.client.Put(ctx, p, string(data))
+	if err != nil {
+		log.Printf("failed to put subnet:%s : %v", err, resp)
+	}
+	return err
 }

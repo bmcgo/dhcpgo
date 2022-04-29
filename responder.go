@@ -20,7 +20,11 @@ type Responder struct {
 	opts gopacket.SerializeOptions
 }
 
-func NewResponder(iface net.Interface) (*Responder, error) {
+func NewResponder(ifaceName string) (*Responder, error) {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return nil, err
+	}
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open socket: %v", err)

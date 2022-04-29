@@ -7,7 +7,7 @@ import (
 
 type Lease struct {
 	IP         string    `json:"ip"`
-	MAC string `json:"mac"`
+	MAC        string    `json:"mac"`
 	Ack        bool      `json:"ack"`
 	LastUpdate time.Time `json:"lastUpdate"`
 }
@@ -52,9 +52,9 @@ func (r *Range) incrementCurrentIP() {
 func (r *Range) GetLeaseForMAC(mac string) *Lease {
 	//TODO: validate mac
 	var (
-		lease *Lease
+		lease       *Lease
 		oldestLease *Lease
-		ok bool
+		ok          bool
 	)
 
 	lease, ok = r.leaseCache[mac]

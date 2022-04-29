@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
-	"net"
 	"os"
 	"strings"
 	"time"
 )
+
+func getenv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		log.Fatalf("Environment variable %s is empty", key)
+	}
+	return value
+}
 
 func main() {
 	var (
@@ -16,17 +22,11 @@ func main() {
 		endpoints string
 	)
 
-	flag.StringVar(&endpoints, "etcd-url", "", "etcd server endpoints comma separated")
-	flag.StringVar(&config.keyPath, "etcd-key", "", "etcd tls key")
-	flag.StringVar(&config.certPath, "etcd-cert", "", "etcd tls cert")
-	flag.StringVar(&config.caCertPath, "etcd-ca", "", "etcd tls ca")
-	flag.StringVar(&config.prefix, "etcd-path", "/dhcpg", "etcd prefix for data")
-	flag.Parse()
-
-	if config.keyPath == "" || config.certPath == "" || config.caCertPath == "" || config.prefix == "" || endpoints == "" {
-		flag.Usage()
-		os.Exit(1)
-	}
+	endpoints = getenv("DHCPGO_ETCD_ENDPOINTS")
+	config.keyPath = getenv("DHCPGO_ETCD_KEY")
+	config.certPath = getenv("DHCPGO_ETCD_CERT")
+	config.caCertPath = getenv("DHCPGO_ETCD_CACERT")
+	config.prefix = getenv("DHCPGO_ETCD_PREFIX")
 
 	config.endpoints = strings.Split(endpoints, ",")
 	etcd, err := NewEtcdClient(context.TODO(), &config, time.Second * 10)
@@ -34,16 +34,32 @@ func main() {
 		log.Fatalf("unable to connect: %s", err)
 	}
 
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "configure":
+			if len(os.Args) < 3 {
+				log.Println("Usage configure: TODO")
+				os.Exit(1)
+			}
+			tool := NewDhcpgoTool(context.Background(), etcd)
+			err = tool.Configure(os.Args[2:])
+			if err != nil {
+				log.Println(err)
+				os.Exit(1)
+			}
+		default:
+			//TODO: Usage
+			log.Println("Usage: TODO")
+		}
+		return
+	}
+
 	manager := NewServerManager(etcd)
 
 	etcd.WatchConfig(context.Background(), manager)
 
-	iface, err := net.InterfaceByName("br0")
-	if err != nil {
-		log.Println("invalid interface")
-		os.Exit(1)
-	}
-	responder, err := NewResponder(*iface)
+
+	responder, err := NewResponder("br0")
 	if err != nil {
 		log.Println(err)
 		os.Exit(1)

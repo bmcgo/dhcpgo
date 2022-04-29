@@ -2,20 +2,11 @@ package main
 
 import (
 	"context"
-	"log"
 )
 
 type ServerManager struct {
 	etcd    *EtcdClient
-	servers []*Server
-}
-
-type Subnet struct {
-	Key string
-	Interface   string `json:"interface"`
-	AddressMask string `json:"addressMask"`
-	IPFrom      string `json:"ipFrom"`
-	IPTo        string `json:"ipTo"`
+	servers map[string]*Server
 }
 
 type ConfigWatchHandler interface {
@@ -25,12 +16,21 @@ type ConfigWatchHandler interface {
 func NewServerManager(client *EtcdClient) *ServerManager {
 	return &ServerManager{
 		etcd:    client,
-		servers: make([]*Server, 1),
+		servers: make(map[string]*Server),
 	}
 }
 
 func (s *ServerManager) HandleSubnet(subnet Subnet) error {
-	log.Println(subnet)
+	responder, err := NewResponder(subnet.Interface)
+	if err != nil {
+		return err
+	}
+	server, err := NewServer(subnet.Interface, "0.0.0.0", responder, s.etcd)
+	if err != nil {
+		return err
+	}
+	s.servers[subnet.AddressMask] = server
+	//TODO: start server
 	return nil
 }
 
