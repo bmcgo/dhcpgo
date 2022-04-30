@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -71,7 +72,19 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 			subnet.Laddr = nameVal[1]
 		default:
 			if strings.HasPrefix(nameVal[0], "option-") {
-				//TODO: parse options
+				num, err := strconv.ParseInt(nameVal[0][7:], 10, 8)
+				if err != nil {
+					return fmt.Errorf("invalid option %s", nameVal)
+				}
+				typeVal := strings.Split(nameVal[1], ":")
+				if len(typeVal) != 2 {
+					return fmt.Errorf("invalid option %s", nameVal)
+				}
+				subnet.Options = append(subnet.Options, Option{
+					ID:    uint8(num),
+					Type:  typeVal[0],
+					Value: typeVal[1],
+				})
 				continue
 			}
 		}

@@ -65,7 +65,6 @@ func updateResp(lease *Lease, resp *dhcpv4.DHCPv4, subnet Subnet) {
 	resp.YourIPAddr = net.ParseIP(lease.IP)
 	resp.GatewayIPAddr = net.ParseIP(subnet.Gateway)
 	resp.ServerIPAddr = net.ParseIP(subnet.Laddr)
-
 	for _, opt := range subnet.Options {
 		var value dhcpv4.OptionValue
 		code := opt.ID
@@ -77,10 +76,8 @@ func updateResp(lease *Lease, resp *dhcpv4.DHCPv4, subnet Subnet) {
 		}
 		resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(code), Value: value})
 	}
-
 	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0))) //TODO
 	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour * 8))          //TODO
-
 }
 
 func (s *Server) handleDiscover(req *dhcpv4.DHCPv4, resp *dhcpv4.DHCPv4) error {
