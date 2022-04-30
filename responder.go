@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/insomniacslk/dhcp/dhcpv4"
+	"log"
 	"net"
 	"syscall"
 
@@ -25,6 +26,7 @@ func NewResponder(ifaceName string) (*Responder, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("binging responder on %s %v", ifaceName, iface)
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open socket: %v", err)
@@ -89,6 +91,7 @@ func (r *Responder) Send(resp *dhcpv4.DHCPv4) error {
 	var hwAddr [8]byte
 	copy(hwAddr[0:6], resp.ClientHWAddr[0:6])
 
+	log.Printf("->%s %s %s %v", resp.ClientHWAddr, resp.MessageType(), resp.YourIPAddr, resp.Options)
 	return syscall.Sendto(r.fd, data, 0, &r.layer)
 }
 

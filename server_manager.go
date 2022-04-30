@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
+	"time"
 )
 
 type ServerManager struct {
@@ -25,12 +27,21 @@ func (s *ServerManager) HandleSubnet(subnet Subnet) error {
 	if err != nil {
 		return err
 	}
-	server, err := NewServer(subnet.Interface, "0.0.0.0", responder, s.etcd)
+	//TODO: default lease time
+	r, err := NewRange(subnet.RangeFrom, subnet.RangeTo, 4 * time.Hour)
+	if err != nil {
+		return err
+	}
+	server, err := NewServer(subnet.Interface, "0.0.0.0", responder, s.etcd, r, subnet)
 	if err != nil {
 		return err
 	}
 	s.servers[subnet.AddressMask] = server
-	//TODO: start server
+	go func() {
+		log.Printf("starting server for subnet %s", subnet.AddressMask)
+		err = server.Serve()
+		log.Printf("exited server %v: %s", s, err)
+	}()
 	return nil
 }
 

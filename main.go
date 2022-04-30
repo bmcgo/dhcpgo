@@ -55,24 +55,6 @@ func main() {
 	}
 
 	manager := NewServerManager(etcd)
-
 	etcd.WatchConfig(context.Background(), manager)
-
-
-	responder, err := NewResponder("br0")
-	if err != nil {
-		log.Println(err)
-		os.Exit(1)
-	}
-	server, err := NewServer("br0", "0.0.0.0", responder, etcd)
-	if err != nil {
-		log.Printf("server error: %s", err)
-		os.Exit(1)
-	}
-	log.Printf("server started: %v", server)
-	err = server.Serve()
-	if err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
+	log.Printf("Exited")
 }

@@ -9,12 +9,15 @@ import (
 )
 
 type Server struct {
+	subnet    Subnet
 	etcd      *EtcdClient
 	server    *server4.Server
 	responder *Responder
+	ipv4Range *Range
+	laddr     string
 }
 
-func NewServer(ifname string, laddr string, responder *Responder, etcd *EtcdClient) (*Server, error) {
+func NewServer(ifname string, laddr string, responder *Responder, etcd *EtcdClient, r *Range, subnet Subnet) (*Server, error) {
 	var err error
 	addr := &net.UDPAddr{
 		IP:   net.ParseIP(laddr),
@@ -23,13 +26,16 @@ func NewServer(ifname string, laddr string, responder *Responder, etcd *EtcdClie
 	server := &Server{
 		responder: responder,
 		etcd:      etcd,
+		ipv4Range: r,
+		subnet:    subnet,
+		laddr:     laddr,
 	}
 	server.server, err = server4.NewServer(ifname, addr, server.Handler)
 	return server, err
 }
 
 func (s *Server) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv4) {
-	log.Printf("%s, %s, %s", conn, peer, req)
+	log.Printf("<-%s %s", req.ClientHWAddr, req.MessageType())
 	resp, err := dhcpv4.NewReplyFromRequest(req)
 	if err != nil {
 		log.Println(err)
@@ -54,29 +60,52 @@ func (s *Server) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv4)
 	}
 }
 
+func updateResp(lease *Lease, resp *dhcpv4.DHCPv4, subnet Subnet) {
+	log.Printf("got lease %v", lease)
+	resp.YourIPAddr = net.ParseIP(lease.IP)
+	resp.GatewayIPAddr = net.ParseIP(subnet.Gateway)
+	resp.ServerIPAddr = net.ParseIP(subnet.Laddr)
+
+	for _, opt := range subnet.Options {
+		var value dhcpv4.OptionValue
+		code := opt.ID
+		switch opt.Type {
+		case "string":
+			value = dhcpv4.String(opt.Value)
+		default:
+			log.Printf("invalid option value type in subnet: %v", subnet)
+		}
+		resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(code), Value: value})
+	}
+
+	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0))) //TODO
+	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour * 8))          //TODO
+
+}
+
 func (s *Server) handleDiscover(req *dhcpv4.DHCPv4, resp *dhcpv4.DHCPv4) error {
+	lease := s.ipv4Range.GetLeaseForMAC(req.ClientHWAddr.String())
+	if lease == nil {
+		//TODO: send NAK
+		return nil
+	}
+	updateResp(lease, resp, s.subnet)
 	resp.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeOffer))
-	resp.YourIPAddr = net.ParseIP("10.12.1.34")
-	resp.GatewayIPAddr = net.ParseIP("10.12.1.1")
-	resp.ServerIPAddr = net.ParseIP("10.12.1.1")
-	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0)))
-	//resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(66), Value: dhcpv4.String("10.12.1.2")}) //not working
-	resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(67), Value: dhcpv4.String("pxe/boot.ok")})
-	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour * 8))
 	return nil
 }
 
 func (s *Server) handleRequest(req *dhcpv4.DHCPv4, resp *dhcpv4.DHCPv4) error {
+	lease := s.ipv4Range.GetLeaseForMAC(req.ClientHWAddr.String())
+	if lease == nil {
+		//TODO: send NAK
+		return nil
+	}
 	resp.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeAck))
-	resp.ServerIPAddr = net.ParseIP("10.12.1.1")
-	resp.YourIPAddr = net.ParseIP("10.12.1.34")
-	resp.GatewayIPAddr = net.ParseIP("10.12.1.1")
-	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0)))
-	resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(66), Value: dhcpv4.String("10.12.1.2")})
-	resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(67), Value: dhcpv4.String("pxe/boot.ok")})
+	updateResp(lease, resp, s.subnet)
 	return nil
 }
 
 func (s *Server) Serve() error {
+	log.Printf("starting server %v", s)
 	return s.server.Serve()
 }

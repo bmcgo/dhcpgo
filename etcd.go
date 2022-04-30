@@ -37,6 +37,7 @@ type Option struct {
 type Subnet struct {
 	Key         string
 	Interface   string   `json:"interface"`
+	Laddr       string   `json:"laddr"`
 	AddressMask string   `json:"addressMask"`
 	RangeFrom   string   `json:"rangeFrom"`
 	RangeTo     string   `json:"rangeTo"`

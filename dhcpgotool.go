@@ -41,8 +41,9 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 		return fmt.Errorf("invalid args %v", args)
 	}
 	subnet := Subnet{
-		DNS:         make([]string, 0),
-		Options:     make([]Option, 0),
+		DNS:     make([]string, 0),
+		Options: make([]Option, 0),
+		Laddr:   "0.0.0.0",
 	}
 
 	//TODO: validate address/mask
@@ -66,6 +67,8 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 			subnet.Gateway = nameVal[1]
 		case "dns":
 			subnet.DNS = append(subnet.DNS, nameVal[1])
+		case "laddr":
+			subnet.Laddr = nameVal[1]
 		default:
 			if strings.HasPrefix(nameVal[0], "option-") {
 				//TODO: parse options
