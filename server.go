@@ -64,7 +64,7 @@ func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 		}
 		resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(code), Value: value})
 	}
-	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPMask(net.ParseIP(lease.NetMask))))
+	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPMask(net.ParseIP(lease.NetMask).To4())))
 	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Duration(lease.LeaseTime) * time.Second))
 	return resp, nil
 }
