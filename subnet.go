@@ -2,7 +2,14 @@ package main
 
 import (
 	"errors"
+	"net"
+	"strconv"
+	"strings"
 	"time"
+)
+
+const (
+	defaultLeaseTime = 14400 //4 hours
 )
 
 type Lease struct {
@@ -16,6 +23,22 @@ type Lease struct {
 
 	Ack        bool      `json:"ack"`
 	LastUpdate time.Time `json:"lastUpdate"`
+}
+
+type Subnet struct {
+	AddressMask string   `json:"addressMask"`
+	RangeFrom   string   `json:"rangeFrom"`
+	RangeTo     string   `json:"rangeTo"`
+	Gateway     string   `json:"gateway"`
+	DNS         []string `json:"dns"`
+	Options     []Option `json:"options"`
+
+	iPFrom     IPv4
+	iPTo       IPv4
+	leaseTime  time.Duration
+	currentIP  IPv4
+	leaseCache map[string]*Lease
+	netMask    string
 }
 
 func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
@@ -32,6 +55,14 @@ func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
 		return nil, errors.New("from > to")
 	}
 	subnet.leaseCache = make(map[string]*Lease)
+	if subnet.leaseTime == 0 {
+		subnet.leaseTime = defaultLeaseTime
+	}
+	prefixLength, err := strconv.ParseInt(strings.Split(subnet.AddressMask, "/")[1], 10, 8)
+	if err != nil {
+		return nil, err
+	}
+	subnet.netMask = net.IP(net.CIDRMask(int(prefixLength), 32)).String()
 	return subnet, nil
 }
 
@@ -43,7 +74,6 @@ func (r *Subnet) incrementCurrentIP() {
 }
 
 func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
-	//TODO: validate mac
 	var (
 		lease       *Lease
 		oldestLease *Lease
@@ -69,6 +99,7 @@ func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
 				IP:         r.currentIP.String(),
 				LastUpdate: time.Now(),
 				Options:    r.Options,
+				NetMask:    r.netMask,
 			}
 			r.leaseCache[lease.IP] = lease
 			r.leaseCache[mac] = lease

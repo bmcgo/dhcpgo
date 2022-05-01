@@ -41,21 +41,6 @@ type Option struct {
 	Value string `json:"value"`
 }
 
-type Subnet struct {
-	AddressMask string   `json:"addressMask"`
-	RangeFrom   string   `json:"rangeFrom"`
-	RangeTo     string   `json:"rangeTo"`
-	Gateway     string   `json:"gateway"`
-	DNS         []string `json:"dns"`
-	Options     []Option `json:"options"`
-
-	iPFrom     IPv4
-	iPTo       IPv4
-	leaseTime  time.Duration
-	currentIP  IPv4
-	leaseCache map[string]*Lease
-}
-
 func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
 	prefix := path.Join("/", c.prefix, "v1")
 	client := &EtcdClient{

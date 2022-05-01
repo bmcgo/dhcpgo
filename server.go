@@ -64,8 +64,8 @@ func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 		}
 		resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(code), Value: value})
 	}
-	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0))) //TODO
-	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour * 8))          //TODO
+	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPMask(net.ParseIP(lease.NetMask))))
+	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Duration(lease.LeaseTime) * time.Second))
 	return resp, nil
 }
 
@@ -76,7 +76,6 @@ func (s *Server) HandleListen(listen *Listen) error {
 	}
 	s.listeners = append(s.listeners, listener)
 	go func() {
-		log.Printf("listening %s", listen.Laddr)
 		err = listener.Serve()
 		log.Printf("exited server %v: %s", s, err)
 	}()
@@ -86,6 +85,7 @@ func (s *Server) HandleListen(listen *Listen) error {
 func (s *Server) HandleSubnet(subnet *Subnet) error {
 	var err error
 	s.subnets[subnet.AddressMask] = subnet
+	log.Printf("Serving subnet %v", subnet)
 	//TODO: load range cache
 	return err
 }

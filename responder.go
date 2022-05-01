@@ -24,6 +24,8 @@ type BroadcastResponder struct {
 	udp   layers.UDP
 	buf   gopacket.SerializeBuffer
 	opts  gopacket.SerializeOptions
+
+	ifname string
 }
 
 func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
@@ -31,7 +33,7 @@ func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("new responder on %s %v", ifaceName, iface)
+	log.Printf("new broadcast responder %v", iface)
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open socket: %v", err)
@@ -42,7 +44,8 @@ func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
 		return nil, fmt.Errorf("cannot set option for socket: %v", err)
 	}
 	responder := &BroadcastResponder{
-		fd: fd,
+		ifname: ifaceName,
+		fd:     fd,
 		layer: syscall.SockaddrLinklayer{
 			Protocol: 0,
 			Ifindex:  iface.Index,
