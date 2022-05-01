@@ -11,12 +11,8 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-type Responder interface {
-	Send(resp *dhcpv4.DHCPv4) error
-	Close()
-}
 
-type BroadcastResponder struct {
+type Responder struct {
 	fd    int
 	layer syscall.SockaddrLinklayer
 	eth   layers.Ethernet
@@ -28,7 +24,7 @@ type BroadcastResponder struct {
 	ifname string
 }
 
-func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
+func NewResponder(ifaceName string) (*Responder, error) {
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
 		return nil, err
@@ -43,14 +39,13 @@ func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot set option for socket: %v", err)
 	}
-	responder := &BroadcastResponder{
+	responder := &Responder{
 		ifname: ifaceName,
 		fd:     fd,
 		layer: syscall.SockaddrLinklayer{
 			Protocol: 0,
 			Ifindex:  iface.Index,
 			Halen:    6,
-			//Addr:     hwAddr, //not used
 		},
 		eth: layers.Ethernet{
 			EthernetType: layers.EthernetTypeIPv4,
@@ -79,7 +74,23 @@ func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
 	return responder, nil
 }
 
-func (r *BroadcastResponder) Send(resp *dhcpv4.DHCPv4) error {
+func (r *Responder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
+	if req.GatewayIPAddr.Equal(net.IPv4zero) {
+		return r.sendBroadcast(resp)
+	}
+	return r.sendUnicast(resp, peer)
+}
+
+func (r *Responder) sendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
+	d, err := net.Dial("udp", target.String())
+	if err != nil {
+		return err
+	}
+	_, err = d.Write(resp.ToBytes())
+	return err
+}
+
+func (r *Responder) sendBroadcast(resp *dhcpv4.DHCPv4) error {
 	r.eth.DstMAC = resp.ClientHWAddr
 	r.ip.SrcIP = resp.ServerIPAddr
 	r.ip.DstIP = resp.YourIPAddr
@@ -99,11 +110,11 @@ func (r *BroadcastResponder) Send(resp *dhcpv4.DHCPv4) error {
 	var hwAddr [8]byte
 	copy(hwAddr[0:6], resp.ClientHWAddr[0:6])
 
-	log.Printf("->%s %s %s %v", resp.ClientHWAddr, resp.MessageType(), resp.YourIPAddr, resp.Options)
+	log.Printf("%s -> %s %s %s %v", r.ifname, resp.ClientHWAddr, resp.MessageType(), resp.YourIPAddr, resp.Options)
 	return syscall.Sendto(r.fd, data, 0, &r.layer)
 }
 
-func (r *BroadcastResponder) Close() {
+func (r *Responder) Close() {
 	err := syscall.Close(r.fd)
 	if err != nil {
 		log.Printf("error closing socket: %s", err)

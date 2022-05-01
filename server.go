@@ -12,7 +12,7 @@ import (
 type Server struct {
 	etcd       *EtcdClient
 	listeners  []*Listener
-	responders []*BroadcastResponder
+	responders []*Responder
 	subnets    map[string]*Subnet
 }
 

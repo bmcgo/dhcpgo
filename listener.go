@@ -15,7 +15,7 @@ type ResponseGetter func(*dhcpv4.DHCPv4, *Listen) (*dhcpv4.DHCPv4, error)
 type Listener struct {
 	server         *server4.Server
 	responseGetter ResponseGetter
-	responder      Responder
+	responder      *Responder
 	listen         *Listen
 	serverIPAddr   net.IP
 }
@@ -31,13 +31,15 @@ func NewListener(listen *Listen, handler ResponseGetter) (*Listener, error) {
 		Port: dhcpv4.ServerPort,
 	}
 	//TODO: unicast responder
-	responder, err := NewBroadcastResponder(listen.Interface)
+	responder, err := NewResponder(listen.Interface)
 	if err != nil {
 		return nil, err
 	}
 	listener := &Listener{responseGetter: handler, responder: responder, listen: listen}
 	listener.server, err = server4.NewServer(listen.Interface, addr, listener.Handler)
-
+	if err != nil {
+		return nil, err
+	}
 	s, err := net.Dial("udp", strings.Split(listen.Subnet, "/")[0] + ":67")
 	if err != nil {
 		return nil, err
@@ -58,12 +60,15 @@ func (l *Listener) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv
 		resp, err = l.handleDiscover(req)
 	case dhcpv4.MessageTypeRequest:
 		resp, err = l.handleRequest(req)
+	default:
+		log.Printf("unknown dhcp packet type %s", req.MessageType())
+		return
 	}
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	err = l.responder.Send(resp)
+	err = l.responder.Send(resp, req, peer)
 	if err != nil {
 		log.Printf("failed to send dhcp response: %s", err)
 	}
