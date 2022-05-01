@@ -6,50 +6,43 @@ import (
 )
 
 type Lease struct {
-	IP         string    `json:"ip"`
-	MAC        string    `json:"mac"`
+	MAC       string   `json:"mac"`
+	IP        string   `json:"ip"`
+	NetMask   string   `json:"netMask"`
+	Gateway   string   `json:"gateway,omitempty"`
+	DNS       []string `json:"dns,omitempty"`
+	Options   []Option `json:"options,omitempty"`
+	LeaseTime int      `json:"leaseTime,omitempty"`
+
 	Ack        bool      `json:"ack"`
 	LastUpdate time.Time `json:"lastUpdate"`
 }
 
-type Range struct {
-	IPFrom    IPv4
-	IPTo      IPv4
-	LeaseTime time.Duration
-
-	currentIP  IPv4
-	leaseCache map[string]*Lease
-}
-
-func NewRange(from string, to string, leaseTime time.Duration) (*Range, error) {
-	ipfrom, err := ParseIPv4(from)
+func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
+	var err error
+	subnet.iPFrom, err = ParseIPv4(subnet.RangeFrom)
 	if err != nil {
 		return nil, err
 	}
-	ipto, err := ParseIPv4(to)
+	subnet.iPTo, err = ParseIPv4(subnet.RangeTo)
 	if err != nil {
 		return nil, err
 	}
-	if from > to {
+	if subnet.iPFrom > subnet.iPTo {
 		return nil, errors.New("from > to")
 	}
-	return &Range{
-			IPFrom:     ipfrom,
-			IPTo:       ipto,
-			LeaseTime:  leaseTime,
-			leaseCache: make(map[string]*Lease),
-		},
-		nil
+	subnet.leaseCache = make(map[string]*Lease)
+	return subnet, nil
 }
 
-func (r *Range) incrementCurrentIP() {
+func (r *Subnet) incrementCurrentIP() {
 	r.currentIP.Inc()
-	if r.currentIP > r.IPTo {
-		r.currentIP = r.IPFrom
+	if r.currentIP > r.iPTo {
+		r.currentIP = r.iPFrom
 	}
 }
 
-func (r *Range) GetLeaseForMAC(mac string) *Lease {
+func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
 	//TODO: validate mac
 	var (
 		lease       *Lease
@@ -63,11 +56,11 @@ func (r *Range) GetLeaseForMAC(mac string) *Lease {
 	}
 
 	if r.currentIP == 0 {
-		r.currentIP = r.IPFrom
+		r.currentIP = r.iPFrom
 	} else {
 		r.incrementCurrentIP()
 	}
-	expiredTime := time.Now().Add(-r.LeaseTime)
+	expiredTime := time.Now().Add(-r.leaseTime)
 	firstIp := r.currentIP
 	for {
 		lease, ok = r.leaseCache[r.currentIP.String()]
@@ -75,6 +68,7 @@ func (r *Range) GetLeaseForMAC(mac string) *Lease {
 			lease = &Lease{
 				IP:         r.currentIP.String(),
 				LastUpdate: time.Now(),
+				Options:    r.Options,
 			}
 			r.leaseCache[lease.IP] = lease
 			r.leaseCache[mac] = lease

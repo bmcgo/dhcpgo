@@ -25,7 +25,14 @@ type EtcdClient struct {
 	leases             map[string]Lease
 	prefix             string
 	prefixConfigSubnet string
+	prefixConfigListen string
 	prefixLeases       string
+}
+
+type Listen struct {
+	Interface string `json:"interface,omitempty"`
+	Subnet    string `json:"subnet"`
+	Laddr     string `json:"laddr"`
 }
 
 type Option struct {
@@ -35,23 +42,27 @@ type Option struct {
 }
 
 type Subnet struct {
-	Key         string
-	Interface   string   `json:"interface"`
-	Laddr       string   `json:"laddr"`
 	AddressMask string   `json:"addressMask"`
 	RangeFrom   string   `json:"rangeFrom"`
 	RangeTo     string   `json:"rangeTo"`
 	Gateway     string   `json:"gateway"`
 	DNS         []string `json:"dns"`
 	Options     []Option `json:"options"`
+
+	iPFrom     IPv4
+	iPTo       IPv4
+	leaseTime  time.Duration
+	currentIP  IPv4
+	leaseCache map[string]*Lease
 }
 
 func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
 	prefix := path.Join("/", c.prefix, "v1")
 	client := &EtcdClient{
-		leases: make(map[string]Lease),
-		prefix: prefix,
+		leases:             make(map[string]Lease),
+		prefix:             prefix,
 		prefixConfigSubnet: path.Join(prefix, "subnet"),
+		prefixConfigListen: path.Join(prefix, "listen"),
 	}
 	tlsInfo := transport.TLSInfo{
 		CertFile:      c.certPath,
@@ -78,18 +89,41 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	return client, client.client.Sync(ct)
 }
 
+func (c *EtcdClient) processListens(ctx context.Context, handler ConfigWatchHandler) error {
+	resp, err := c.client.Get(ctx, c.prefixConfigListen, clientv3.WithPrefix())
+	if err != nil {
+		return fmt.Errorf("failed to list config prefix: %s", err)
+	}
+	for _, kv := range resp.Kvs {
+		s := &Listen{}
+		err = json.Unmarshal(kv.Value, s)
+		if err != nil {
+			log.Printf("failed to unmarshal listener %q", kv.Key)
+		} else {
+			err = handler.HandleListen(s)
+			if err != nil {
+				log.Printf("error handling listener %q, %s", kv.Key, err)
+			}
+		}
+	}
+	return nil
+}
+
 func (c *EtcdClient) processSubnets(ctx context.Context, handler ConfigWatchHandler) error {
 	resp, err := c.client.Get(ctx, c.prefixConfigSubnet, clientv3.WithPrefix())
 	if err != nil {
 		return fmt.Errorf("failed to list config prefix: %s", err)
 	}
 	for _, kv := range resp.Kvs {
-		s := Subnet{}
-		err = json.Unmarshal(kv.Value, &s)
+		s := &Subnet{}
+		err = json.Unmarshal(kv.Value, s)
 		if err != nil {
 			log.Printf("failed to unmarshal subnet %q", kv.Key)
 		} else {
-			s.Key = string(kv.Key)
+			s, err = InitializeSubnet(s)
+			if err != nil {
+				return err
+			}
 			err = handler.HandleSubnet(s)
 			if err != nil {
 				log.Printf("error handling subnet %q, %s", kv.Key, err)
@@ -100,8 +134,13 @@ func (c *EtcdClient) processSubnets(ctx context.Context, handler ConfigWatchHand
 }
 
 func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler) {
+	var err error
 	log.Printf("Watching config with prefix: %s", c.prefix)
-	err := c.processSubnets(ctx, handler)
+	err = c.processListens(ctx, handler)
+	if err != nil {
+		log.Println(err)
+	}
+	err = c.processSubnets(ctx, handler)
 	if err != nil {
 		log.Println(err)
 	}
@@ -110,6 +149,7 @@ func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler
 		resp, ok := <-ch
 		for _, ev := range resp.Events {
 			log.Println(ev)
+			//TODO: update config
 		}
 		if !ok {
 			log.Println("Config watcher stopped")
@@ -133,6 +173,20 @@ func (c *EtcdClient) GetFreeIP() {
 func (c *EtcdClient) UpdateLease(mac net.HardwareAddr, lease Lease) error {
 	c.leases[mac.String()] = lease
 	return nil
+}
+
+func (c *EtcdClient) PutListen(ctx context.Context, l Listen) error {
+	data, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+	p := path.Join(c.prefixConfigListen, l.Subnet)
+	resp, err := c.client.Put(ctx, p, string(data))
+	if err != nil {
+		log.Printf("failed to put listen:%s : %v", err, resp)
+	}
+	log.Println(resp)
+	return err
 }
 
 func (c *EtcdClient) PutSubnet(ctx context.Context, sn Subnet) error {

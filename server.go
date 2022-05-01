@@ -1,71 +1,59 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"github.com/insomniacslk/dhcp/dhcpv4"
-	"github.com/insomniacslk/dhcp/dhcpv4/server4"
 	"log"
 	"net"
 	"time"
 )
 
 type Server struct {
-	subnet    Subnet
-	etcd      *EtcdClient
-	server    *server4.Server
-	responder *Responder
-	ipv4Range *Range
-	laddr     string
+	etcd       *EtcdClient
+	listeners  []*Listener
+	responders []*BroadcastResponder
+	subnets    map[string]*Subnet
 }
 
-func NewServer(ifname string, laddr string, responder *Responder, etcd *EtcdClient, r *Range, subnet Subnet) (*Server, error) {
-	var err error
-	addr := &net.UDPAddr{
-		IP:   net.ParseIP(laddr),
-		Port: dhcpv4.ServerPort,
-	}
-	server := &Server{
-		responder: responder,
-		etcd:      etcd,
-		ipv4Range: r,
-		subnet:    subnet,
-		laddr:     laddr,
-	}
-	server.server, err = server4.NewServer(ifname, addr, server.Handler)
-	return server, err
+type ConfigWatchHandler interface {
+	HandleListen(*Listen) error
+	HandleSubnet(*Subnet) error
+	//HandleHost(Host) error //TODO
 }
 
-func (s *Server) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv4) {
-	log.Printf("<-%s %s", req.ClientHWAddr, req.MessageType())
+func NewServer(client *EtcdClient) *Server {
+	return &Server{
+		etcd:      client,
+		listeners: make([]*Listener, 0),
+		subnets:   make(map[string]*Subnet),
+	}
+}
+
+func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, error) {
+	var lease *Lease
+	log.Println(req, listen)
+	subnet, ok := s.subnets[listen.Subnet]
+	if ok {
+		lease = subnet.GetLeaseForMAC(req.ClientHWAddr.String())
+		if lease == nil {
+			return nil, errors.New("empty lease")
+		}
+	} else {
+		//TODO: find subnet
+		return nil, errors.New("not implemented")
+	}
+	log.Printf("got lease %v", lease)
+
 	resp, err := dhcpv4.NewReplyFromRequest(req)
 	if err != nil {
-		log.Println(err)
-		return
+		return resp, err
 	}
 
-	switch req.MessageType() {
-	case dhcpv4.MessageTypeDiscover:
-		err = s.handleDiscover(req, resp)
-	case dhcpv4.MessageTypeRequest:
-		err = s.handleRequest(req, resp)
-	}
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	err = s.responder.Send(resp)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-}
-
-func updateResp(lease *Lease, resp *dhcpv4.DHCPv4, subnet Subnet) {
-	log.Printf("got lease %v", lease)
 	resp.YourIPAddr = net.ParseIP(lease.IP)
-	resp.GatewayIPAddr = net.ParseIP(subnet.Gateway)
-	resp.ServerIPAddr = net.ParseIP(subnet.Laddr)
-	for _, opt := range subnet.Options {
+	resp.GatewayIPAddr = net.ParseIP(lease.Gateway)
+	resp.ServerIPAddr = net.ParseIP("0.0.0.0") //TODO
+	for _, opt := range lease.Options {
 		var value dhcpv4.OptionValue
 		code := opt.ID
 		switch opt.Type {
@@ -78,31 +66,31 @@ func updateResp(lease *Lease, resp *dhcpv4.DHCPv4, subnet Subnet) {
 	}
 	resp.UpdateOption(dhcpv4.OptSubnetMask(net.IPv4Mask(255, 255, 255, 0))) //TODO
 	resp.UpdateOption(dhcpv4.OptIPAddressLeaseTime(time.Hour * 8))          //TODO
+	return resp, nil
 }
 
-func (s *Server) handleDiscover(req *dhcpv4.DHCPv4, resp *dhcpv4.DHCPv4) error {
-	lease := s.ipv4Range.GetLeaseForMAC(req.ClientHWAddr.String())
-	if lease == nil {
-		//TODO: send NAK
-		return nil
+func (s *Server) HandleListen(listen *Listen) error {
+	listener, err := NewListener(listen, s.GetLease)
+	if err != nil {
+		return err
 	}
-	updateResp(lease, resp, s.subnet)
-	resp.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeOffer))
+	s.listeners = append(s.listeners, listener)
+	go func() {
+		log.Printf("listening %s", listen.Laddr)
+		err = listener.Serve()
+		log.Printf("exited server %v: %s", s, err)
+	}()
 	return nil
 }
 
-func (s *Server) handleRequest(req *dhcpv4.DHCPv4, resp *dhcpv4.DHCPv4) error {
-	lease := s.ipv4Range.GetLeaseForMAC(req.ClientHWAddr.String())
-	if lease == nil {
-		//TODO: send NAK
-		return nil
-	}
-	resp.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeAck))
-	updateResp(lease, resp, s.subnet)
-	return nil
+func (s *Server) HandleSubnet(subnet *Subnet) error {
+	var err error
+	s.subnets[subnet.AddressMask] = subnet
+	//TODO: load range cache
+	return err
 }
 
-func (s *Server) Serve() error {
-	log.Printf("starting server %v", s)
-	return s.server.Serve()
+func (s *Server) Run(ctx context.Context) error {
+	s.etcd.WatchConfig(ctx, s)
+	return nil
 }

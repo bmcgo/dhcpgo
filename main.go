@@ -18,7 +18,7 @@ func getenv(key string) string {
 
 func main() {
 	var (
-		config EtcdClientConfig
+		config    EtcdClientConfig
 		endpoints string
 	)
 
@@ -29,7 +29,7 @@ func main() {
 	config.prefix = getenv("DHCPGO_ETCD_PREFIX")
 
 	config.endpoints = strings.Split(endpoints, ",")
-	etcd, err := NewEtcdClient(context.TODO(), &config, time.Second * 10)
+	etcd, err := NewEtcdClient(context.TODO(), &config, time.Second*10)
 	if err != nil {
 		log.Fatalf("unable to connect: %s", err)
 	}
@@ -54,7 +54,7 @@ func main() {
 		return
 	}
 
-	manager := NewServerManager(etcd)
+	manager := NewServer(etcd)
 	etcd.WatchConfig(context.Background(), manager)
 	log.Printf("Exited")
 }

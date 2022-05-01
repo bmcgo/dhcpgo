@@ -11,22 +11,27 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-type Responder struct {
+type Responder interface {
+	Send(resp *dhcpv4.DHCPv4) error
+	Close()
+}
+
+type BroadcastResponder struct {
 	fd    int
 	layer syscall.SockaddrLinklayer
 	eth   layers.Ethernet
 	ip    layers.IPv4
 	udp   layers.UDP
-	buf gopacket.SerializeBuffer
-	opts gopacket.SerializeOptions
+	buf   gopacket.SerializeBuffer
+	opts  gopacket.SerializeOptions
 }
 
-func NewResponder(ifaceName string) (*Responder, error) {
+func NewBroadcastResponder(ifaceName string) (*BroadcastResponder, error) {
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("binging responder on %s %v", ifaceName, iface)
+	log.Printf("new responder on %s %v", ifaceName, iface)
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open socket: %v", err)
@@ -36,7 +41,7 @@ func NewResponder(ifaceName string) (*Responder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot set option for socket: %v", err)
 	}
-	responder := &Responder{
+	responder := &BroadcastResponder{
 		fd: fd,
 		layer: syscall.SockaddrLinklayer{
 			Protocol: 0,
@@ -46,7 +51,7 @@ func NewResponder(ifaceName string) (*Responder, error) {
 		},
 		eth: layers.Ethernet{
 			EthernetType: layers.EthernetTypeIPv4,
-			SrcMAC: iface.HardwareAddr,
+			SrcMAC:       iface.HardwareAddr,
 		},
 		ip: layers.IPv4{
 			Version:  4,
@@ -71,7 +76,7 @@ func NewResponder(ifaceName string) (*Responder, error) {
 	return responder, nil
 }
 
-func (r *Responder) Send(resp *dhcpv4.DHCPv4) error {
+func (r *BroadcastResponder) Send(resp *dhcpv4.DHCPv4) error {
 	r.eth.DstMAC = resp.ClientHWAddr
 	r.ip.SrcIP = resp.ServerIPAddr
 	r.ip.DstIP = resp.YourIPAddr
@@ -95,6 +100,9 @@ func (r *Responder) Send(resp *dhcpv4.DHCPv4) error {
 	return syscall.Sendto(r.fd, data, 0, &r.layer)
 }
 
-func (r *Responder) Close() error {
-	return syscall.Close(r.fd)
+func (r *BroadcastResponder) Close() {
+	err := syscall.Close(r.fd)
+	if err != nil {
+		log.Printf("error closing socket: %s", err)
+	}
 }
