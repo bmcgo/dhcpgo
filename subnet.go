@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -26,12 +27,12 @@ type Lease struct {
 }
 
 type Subnet struct {
-	AddressMask string   `json:"addressMask"`
-	RangeFrom   string   `json:"rangeFrom"`
-	RangeTo     string   `json:"rangeTo"`
-	Gateway     string   `json:"gateway"`
-	DNS         []string `json:"dns"`
-	Options     []Option `json:"options"`
+	Subnet    string   `json:"subnet"`
+	RangeFrom string   `json:"rangeFrom"`
+	RangeTo   string   `json:"rangeTo"`
+	Gateway   string   `json:"gateway"`
+	DNS       []string `json:"dns"`
+	Options   []Option `json:"options"`
 
 	iPFrom     IPv4
 	iPTo       IPv4
@@ -58,7 +59,11 @@ func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
 	if subnet.leaseTime == 0 {
 		subnet.leaseTime = defaultLeaseTime
 	}
-	prefixLength, err := strconv.ParseInt(strings.Split(subnet.AddressMask, "/")[1], 10, 8)
+	sn := strings.Split(subnet.Subnet, "/")
+	if len(sn) != 2 {
+		return nil, fmt.Errorf("invalid subnet %q (%v)", subnet.Subnet, subnet)
+	}
+	prefixLength, err := strconv.ParseInt(sn[1], 10, 8)
 	if err != nil {
 		return nil, err
 	}

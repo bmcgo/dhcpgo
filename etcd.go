@@ -179,7 +179,7 @@ func (c *EtcdClient) PutSubnet(ctx context.Context, sn Subnet) error {
 	if err != nil {
 		return err
 	}
-	p := path.Join(c.prefixConfigSubnet, sn.AddressMask)
+	p := path.Join(c.prefixConfigSubnet, sn.Subnet)
 	resp, err := c.client.Put(ctx, p, string(data))
 	if err != nil {
 		log.Printf("failed to put subnet:%s : %v", err, resp)

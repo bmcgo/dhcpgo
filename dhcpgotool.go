@@ -72,7 +72,7 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 	}
 
 	//TODO: validate address/mask
-	subnet.AddressMask = args[0]
+	subnet.Subnet = args[0]
 
 	ipRange := strings.Split(args[1], "-")
 	if len(ipRange) != 2 {

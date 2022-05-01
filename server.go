@@ -52,7 +52,6 @@ func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 
 	resp.YourIPAddr = net.ParseIP(lease.IP)
 	resp.GatewayIPAddr = net.ParseIP(lease.Gateway)
-	resp.ServerIPAddr = net.ParseIP("0.0.0.0") //TODO
 	for _, opt := range lease.Options {
 		var value dhcpv4.OptionValue
 		code := opt.ID
@@ -84,7 +83,7 @@ func (s *Server) HandleListen(listen *Listen) error {
 
 func (s *Server) HandleSubnet(subnet *Subnet) error {
 	var err error
-	s.subnets[subnet.AddressMask] = subnet
+	s.subnets[subnet.Subnet] = subnet
 	log.Printf("Serving subnet %v", subnet)
 	//TODO: load range cache
 	return err
