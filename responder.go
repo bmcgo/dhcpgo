@@ -11,7 +11,6 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-
 type Responder struct {
 	fd    int
 	layer syscall.SockaddrLinklayer

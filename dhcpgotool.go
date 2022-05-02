@@ -61,7 +61,7 @@ func (c *DhcpgoTool) configureListen(args []string) error {
 }
 
 func (c *DhcpgoTool) configureSubnet(args []string) error {
-	// 10.1.1.0/24 10.1.1.10-10.1.1.99 if=eth0,gw=10.1.1.1,dns=10.1.1.1,dns=10.2.1.1,option-67=string:boot.pxe,option-66=string:10.12.1.1
+	// 10.1.1.0/24 10.1.1.10-10.1.1.99 gw=10.1.1.1,dns=10.1.1.1,dns=10.2.1.1,option-67=string:boot.pxe,option-66=string:10.12.1.1
 	if len(args) != 3 {
 		//TODO: print usage
 		return fmt.Errorf("invalid args %v", args)

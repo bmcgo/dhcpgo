@@ -30,7 +30,6 @@ func NewListener(listen *Listen, handler ResponseGetter) (*Listener, error) {
 		IP:   net.ParseIP(listen.Laddr),
 		Port: dhcpv4.ServerPort,
 	}
-	//TODO: unicast responder
 	responder, err := NewResponder(listen.Interface)
 	if err != nil {
 		return nil, err
@@ -40,7 +39,7 @@ func NewListener(listen *Listen, handler ResponseGetter) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := net.Dial("udp", strings.Split(listen.Subnet, "/")[0] + ":67")
+	s, err := net.Dial("udp", strings.Split(listen.Subnet, "/")[0]+":67")
 	if err != nil {
 		return nil, err
 	}

@@ -105,6 +105,9 @@ func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
 				LastUpdate: time.Now(),
 				Options:    r.Options,
 				NetMask:    r.netMask,
+				Gateway:    r.Gateway,
+				DNS:        r.DNS,
+				LeaseTime:  defaultLeaseTime, //TODO
 			}
 			r.leaseCache[lease.IP] = lease
 			r.leaseCache[mac] = lease
