@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/bmcgo/dhcpgo/dhcp"
 	"log"
 	"os"
 	"strings"
@@ -54,7 +55,7 @@ func main() {
 		return
 	}
 
-	manager := NewServer(etcd)
+	manager := dhcp.NewServer(etcd)
 	etcd.WatchConfig(context.Background(), manager)
 	log.Printf("Exited")
 }

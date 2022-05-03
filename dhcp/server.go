@@ -1,4 +1,4 @@
-package main
+package dhcp
 
 import (
 	"context"
@@ -9,9 +9,25 @@ import (
 	"time"
 )
 
+type Listen struct {
+	Interface string `json:"interface,omitempty"`
+	Subnet    string `json:"subnet"`
+	Laddr     string `json:"laddr"`
+}
+
+type Option struct {
+	ID    uint8  `json:"id"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type Storage interface {
+	WatchConfig(context.Context, ConfigWatchHandler)
+}
+
 type Server struct {
-	etcd       *EtcdClient
-	listeners  []*Listener
+	storage   Storage
+	listeners []*Listener
 	responders []*Responder
 	subnets    map[string]*Subnet
 }
@@ -22,9 +38,9 @@ type ConfigWatchHandler interface {
 	//HandleHost(Host) error //TODO
 }
 
-func NewServer(client *EtcdClient) *Server {
+func NewServer(storage Storage) *Server {
 	return &Server{
-		etcd:      client,
+		storage:   storage,
 		listeners: make([]*Listener, 0),
 		subnets:   make(map[string]*Subnet),
 	}
@@ -100,6 +116,6 @@ func (s *Server) HandleSubnet(subnet *Subnet) error {
 }
 
 func (s *Server) Run(ctx context.Context) error {
-	s.etcd.WatchConfig(ctx, s)
+	s.storage.WatchConfig(ctx, s)
 	return nil
 }

@@ -10,6 +10,8 @@ import (
 	"net"
 	"path"
 	"time"
+
+	"github.com/bmcgo/dhcpgo/dhcp"
 )
 
 type EtcdClientConfig struct {
@@ -22,29 +24,17 @@ type EtcdClientConfig struct {
 
 type EtcdClient struct {
 	client             *clientv3.Client
-	leases             map[string]Lease
+	leases             map[string]dhcp.Lease
 	prefix             string
 	prefixConfigSubnet string
 	prefixConfigListen string
 	prefixLeases       string
 }
 
-type Listen struct {
-	Interface string `json:"interface,omitempty"`
-	Subnet    string `json:"subnet"`
-	Laddr     string `json:"laddr"`
-}
-
-type Option struct {
-	ID    uint8  `json:"id"`
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
 func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Duration) (*EtcdClient, error) {
 	prefix := path.Join("/", c.prefix, "v1")
 	client := &EtcdClient{
-		leases:             make(map[string]Lease),
+		leases:             make(map[string]dhcp.Lease),
 		prefix:             prefix,
 		prefixConfigSubnet: path.Join(prefix, "subnet"),
 		prefixConfigListen: path.Join(prefix, "listen"),
@@ -74,13 +64,13 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	return client, client.client.Sync(ct)
 }
 
-func (c *EtcdClient) processListens(ctx context.Context, handler ConfigWatchHandler) error {
+func (c *EtcdClient) processListens(ctx context.Context, handler dhcp.ConfigWatchHandler) error {
 	resp, err := c.client.Get(ctx, c.prefixConfigListen, clientv3.WithPrefix())
 	if err != nil {
 		return fmt.Errorf("failed to list config prefix: %s", err)
 	}
 	for _, kv := range resp.Kvs {
-		s := &Listen{}
+		s := &dhcp.Listen{}
 		err = json.Unmarshal(kv.Value, s)
 		if err != nil {
 			log.Printf("failed to unmarshal listener %q", kv.Key)
@@ -94,18 +84,18 @@ func (c *EtcdClient) processListens(ctx context.Context, handler ConfigWatchHand
 	return nil
 }
 
-func (c *EtcdClient) processSubnets(ctx context.Context, handler ConfigWatchHandler) error {
+func (c *EtcdClient) processSubnets(ctx context.Context, handler dhcp.ConfigWatchHandler) error {
 	resp, err := c.client.Get(ctx, c.prefixConfigSubnet, clientv3.WithPrefix())
 	if err != nil {
 		return fmt.Errorf("failed to list config prefix: %s", err)
 	}
 	for _, kv := range resp.Kvs {
-		s := &Subnet{}
+		s := &dhcp.Subnet{}
 		err = json.Unmarshal(kv.Value, s)
 		if err != nil {
 			log.Printf("failed to unmarshal subnet %q", kv.Key)
 		} else {
-			s, err = InitializeSubnet(s)
+			s, err = dhcp.InitializeSubnet(s)
 			if err != nil {
 				return err
 			}
@@ -118,7 +108,7 @@ func (c *EtcdClient) processSubnets(ctx context.Context, handler ConfigWatchHand
 	return nil
 }
 
-func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler) {
+func (c *EtcdClient) WatchConfig(ctx context.Context, handler dhcp.ConfigWatchHandler) {
 	var err error
 	log.Printf("Watching config with prefix: %s", c.prefix)
 	err = c.processListens(ctx, handler)
@@ -143,7 +133,7 @@ func (c *EtcdClient) WatchConfig(ctx context.Context, handler ConfigWatchHandler
 	}
 }
 
-func (c *EtcdClient) GetLease(mac net.HardwareAddr) *Lease {
+func (c *EtcdClient) GetLease(mac net.HardwareAddr) *dhcp.Lease {
 	lease, ok := c.leases[mac.String()]
 	if ok {
 		return &lease
@@ -155,12 +145,12 @@ func (c *EtcdClient) GetFreeIP() {
 
 }
 
-func (c *EtcdClient) UpdateLease(mac net.HardwareAddr, lease Lease) error {
+func (c *EtcdClient) UpdateLease(mac net.HardwareAddr, lease dhcp.Lease) error {
 	c.leases[mac.String()] = lease
 	return nil
 }
 
-func (c *EtcdClient) PutListen(ctx context.Context, l Listen) error {
+func (c *EtcdClient) PutListen(ctx context.Context, l dhcp.Listen) error {
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
@@ -174,7 +164,7 @@ func (c *EtcdClient) PutListen(ctx context.Context, l Listen) error {
 	return err
 }
 
-func (c *EtcdClient) PutSubnet(ctx context.Context, sn Subnet) error {
+func (c *EtcdClient) PutSubnet(ctx context.Context, sn dhcp.Subnet) error {
 	data, err := json.Marshal(sn)
 	if err != nil {
 		return err

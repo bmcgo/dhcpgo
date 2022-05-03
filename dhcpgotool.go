@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bmcgo/dhcpgo/dhcp"
 	"strconv"
 	"strings"
 )
 
 type DhcpgoClient interface {
-	PutListen(context.Context, Listen) error
-	PutSubnet(context.Context, Subnet) error
+	PutListen(context.Context, dhcp.Listen) error
+	PutSubnet(context.Context, dhcp.Subnet) error
 }
 
 type DhcpgoTool struct {
@@ -42,7 +43,7 @@ func (c *DhcpgoTool) configureListen(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("invalid args %v", args)
 	}
-	listen := Listen{}
+	listen := dhcp.Listen{}
 	for _, bit := range strings.Split(args[0], ",") {
 		keyVal := strings.Split(bit, "=")
 		//TODO: validate all
@@ -66,9 +67,9 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 		//TODO: print usage
 		return fmt.Errorf("invalid args %v", args)
 	}
-	subnet := Subnet{
+	subnet := dhcp.Subnet{
 		DNS:     make([]string, 0),
-		Options: make([]Option, 0),
+		Options: make([]dhcp.Option, 0),
 	}
 
 	//TODO: validate address/mask
@@ -100,7 +101,7 @@ func (c *DhcpgoTool) configureSubnet(args []string) error {
 				if len(typeVal) != 2 {
 					return fmt.Errorf("invalid option %s", nameVal)
 				}
-				subnet.Options = append(subnet.Options, Option{
+				subnet.Options = append(subnet.Options, dhcp.Option{
 					ID:    uint8(num),
 					Type:  typeVal[0],
 					Value: typeVal[1],
