@@ -26,8 +26,7 @@ type Storage interface {
 }
 
 type Server struct {
-	storage   Storage
-	listeners []*Listener
+	listeners  []*Listener
 	responders []*Responder
 	subnets    map[string]*Subnet
 }
@@ -38,15 +37,14 @@ type ConfigWatchHandler interface {
 	//HandleHost(Host) error //TODO
 }
 
-func NewServer(storage Storage) *Server {
+func NewServer() *Server {
 	return &Server{
-		storage:   storage,
 		listeners: make([]*Listener, 0),
 		subnets:   make(map[string]*Subnet),
 	}
 }
 
-func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, error) {
+func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, error) {
 	var lease *Lease
 	log.Println(req, listen)
 	subnet, ok := s.subnets[listen.Subnet]
@@ -95,7 +93,7 @@ func (s *Server) GetLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 }
 
 func (s *Server) HandleListen(listen *Listen) error {
-	listener, err := NewListener(listen, s.GetLease)
+	listener, err := NewListener(listen, s.getLease)
 	if err != nil {
 		return err
 	}
@@ -111,11 +109,18 @@ func (s *Server) HandleSubnet(subnet *Subnet) error {
 	var err error
 	s.subnets[subnet.Subnet] = subnet
 	log.Printf("Serving subnet %v", subnet)
-	//TODO: load range cache
 	return err
 }
 
-func (s *Server) Run(ctx context.Context) error {
-	s.storage.WatchConfig(ctx, s)
+func (s *Server) HandleLease(lease *Lease) error {
 	return nil
+}
+
+func (s *Server) Close() {
+	for _, l := range s.listeners {
+		err := l.server.Close()
+		if err != nil {
+			log.Printf("failed to close listener: %s %s", l, err)
+		}
+	}
 }

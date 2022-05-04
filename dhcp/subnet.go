@@ -22,7 +22,7 @@ type Lease struct {
 	Options   []Option `json:"options,omitempty"`
 	LeaseTime int      `json:"leaseTime,omitempty"`
 
-	Ack        bool      `json:"ack"`
+	Subnet     string    `json:"subnet"`
 	LastUpdate time.Time `json:"lastUpdate"`
 }
 
@@ -126,7 +126,6 @@ func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
 		r.incrementCurrentIP()
 		if firstIp == r.currentIP {
 			if oldestLease != nil {
-				oldestLease.Ack = false
 				return oldestLease
 			} else {
 				return nil
