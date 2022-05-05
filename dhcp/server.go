@@ -26,9 +26,11 @@ type Storage interface {
 }
 
 type Server struct {
-	listeners  []*Listener
-	responders []*Responder
-	subnets    map[string]*Subnet
+	listeners         []*Listener
+	responders        []*Responder
+	subnets           map[string]*Subnet
+	dhcpServerFactory DHCPv4ServerFactory
+	responderFactory ResponderFactory
 }
 
 type ConfigWatchHandler interface {
@@ -37,10 +39,24 @@ type ConfigWatchHandler interface {
 	//HandleHost(Host) error //TODO
 }
 
-func NewServer() *Server {
+type ServerConfig struct {
+	DHCPv4ServerFactory DHCPv4ServerFactory
+	ResponderFactory ResponderFactory
+}
+
+func GetDefaultServerConfig() ServerConfig {
+	return ServerConfig{
+		DHCPv4ServerFactory: &DefaultDHCPServerFactory{},
+		ResponderFactory:    &DefaultResponderFactory{},
+	}
+}
+
+func NewServer(config ServerConfig) *Server {
 	return &Server{
-		listeners: make([]*Listener, 0),
-		subnets:   make(map[string]*Subnet),
+		listeners:         make([]*Listener, 0),
+		subnets:           make(map[string]*Subnet),
+		dhcpServerFactory: config.DHCPv4ServerFactory,
+		responderFactory: config.ResponderFactory,
 	}
 }
 
@@ -93,7 +109,7 @@ func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 }
 
 func (s *Server) HandleListen(listen *Listen) error {
-	listener, err := NewListener(listen, s.getLease)
+	listener, err := NewListener(listen, s.getLease, s.dhcpServerFactory, s.responderFactory)
 	if err != nil {
 		return err
 	}

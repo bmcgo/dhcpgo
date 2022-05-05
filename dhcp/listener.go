@@ -7,44 +7,52 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv4/server4"
 	"log"
 	"net"
-	"strings"
 )
 
 type ResponseGetter func(*dhcpv4.DHCPv4, *Listen) (*dhcpv4.DHCPv4, error)
 
 type Listener struct {
-	server         *server4.Server
+	server         DHCPv4Server
 	responseGetter ResponseGetter
-	responder      *Responder
+	responder      Responder
 	listen         *Listen
 	serverIPAddr   net.IP
+}
+
+type DHCPv4Server interface {
+	Serve() error
+	Close() error
+}
+
+type DHCPv4ServerFactory interface {
+	NewServer(listenInterface string, listenAddress string, handler server4.Handler) (DHCPv4Server, error)
+}
+
+type DefaultDHCPServerFactory struct{}
+
+func (f *DefaultDHCPServerFactory) NewServer(listenInterface string, listenAddress string, handler server4.Handler) (DHCPv4Server, error) {
+	addr := &net.UDPAddr{
+		IP:   net.ParseIP(listenAddress),
+		Port: dhcpv4.ServerPort,
+	}
+	return server4.NewServer(listenInterface, addr, handler)
 }
 
 func (l Listener) String() string {
 	return fmt.Sprintf("[Listener [if:%q subnet:%q laddr:%q]]", l.listen.Interface, l.listen.Subnet, l.listen.Laddr)
 }
 
-func NewListener(listen *Listen, handler ResponseGetter) (*Listener, error) {
-	var err error
-	addr := &net.UDPAddr{
-		IP:   net.ParseIP(listen.Laddr),
-		Port: dhcpv4.ServerPort,
-	}
-	responder, err := NewResponder(listen.Interface)
+func NewListener(listen *Listen, handler ResponseGetter, serverFactory DHCPv4ServerFactory, responderFactory ResponderFactory) (*Listener, error) {
+		responder, err := responderFactory.NewResponder(listen)
 	if err != nil {
 		return nil, err
 	}
 	listener := &Listener{responseGetter: handler, responder: responder, listen: listen}
-	listener.server, err = server4.NewServer(listen.Interface, addr, listener.Handler)
+	listener.server, err = serverFactory.NewServer(listen.Interface, listen.Laddr, listener.Handler)
 	if err != nil {
 		return nil, err
 	}
-	s, err := net.Dial("udp", strings.Split(listen.Subnet, "/")[0]+":67")
-	if err != nil {
-		return nil, err
-	}
-	defer s.Close()
-	listener.serverIPAddr = net.ParseIP(strings.Split(s.LocalAddr().String(), ":")[0])
+	listener.serverIPAddr = net.ParseIP(listen.Laddr).To4()
 	return listener, err
 }
 

@@ -11,7 +11,16 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-type Responder struct {
+type ResponderFactory interface {
+	NewResponder(*Listen) (Responder, error)
+}
+
+type Responder interface {
+	Close()
+	Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error
+}
+
+type SocketResponder struct {
 	fd    int
 	layer syscall.SockaddrLinklayer
 	eth   layers.Ethernet
@@ -23,8 +32,10 @@ type Responder struct {
 	ifname string
 }
 
-func NewResponder(ifaceName string) (*Responder, error) {
-	iface, err := net.InterfaceByName(ifaceName)
+type DefaultResponderFactory struct {}
+
+func (r *DefaultResponderFactory) NewResponder(listen *Listen) (Responder, error) {
+	iface, err := net.InterfaceByName(listen.Interface)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +49,8 @@ func NewResponder(ifaceName string) (*Responder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot set option for socket: %v", err)
 	}
-	responder := &Responder{
-		ifname: ifaceName,
+	responder := &SocketResponder{
+		ifname: listen.Interface,
 		fd:     fd,
 		layer: syscall.SockaddrLinklayer{
 			Protocol: 0,
@@ -73,14 +84,14 @@ func NewResponder(ifaceName string) (*Responder, error) {
 	return responder, nil
 }
 
-func (r *Responder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
+func (r *SocketResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
 	if req.GatewayIPAddr.Equal(net.IPv4zero) {
 		return r.sendBroadcast(resp)
 	}
 	return r.sendUnicast(resp, peer)
 }
 
-func (r *Responder) sendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
+func (r *SocketResponder) sendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
 	d, err := net.Dial("udp", target.String())
 	if err != nil {
 		return err
@@ -89,7 +100,7 @@ func (r *Responder) sendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
 	return err
 }
 
-func (r *Responder) sendBroadcast(resp *dhcpv4.DHCPv4) error {
+func (r *SocketResponder) sendBroadcast(resp *dhcpv4.DHCPv4) error {
 	r.eth.DstMAC = resp.ClientHWAddr
 	r.ip.SrcIP = resp.ServerIPAddr
 	r.ip.DstIP = resp.YourIPAddr
@@ -113,7 +124,7 @@ func (r *Responder) sendBroadcast(resp *dhcpv4.DHCPv4) error {
 	return syscall.Sendto(r.fd, data, 0, &r.layer)
 }
 
-func (r *Responder) Close() {
+func (r *SocketResponder) Close() {
 	err := syscall.Close(r.fd)
 	if err != nil {
 		log.Printf("error closing socket: %s", err)

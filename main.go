@@ -55,7 +55,7 @@ func main() {
 		return
 	}
 
-	server := dhcp.NewServer()
+	server := dhcp.NewServer(dhcp.GetDefaultServerConfig())
 	etcd.WatchConfig(context.Background(), server)
 	log.Printf("Exited")
 }
