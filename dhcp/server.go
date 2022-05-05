@@ -70,8 +70,20 @@ func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 			return nil, errors.New("empty lease")
 		}
 	} else {
-		//TODO: find subnet
-		return nil, errors.New("not implemented")
+		for _, s := range s.subnets {
+			if s.Contains(req.GatewayIPAddr) {
+				log.Printf("found subnet: %v", s)
+				lease = s.GetLeaseForMAC(req.ClientHWAddr.String())
+				break
+			} else {
+				log.Printf("%s not in %s (%s)", req.GatewayIPAddr.String(), s.Subnet, s.ipNet)
+			}
+		}
+	}
+
+	if lease == nil {
+		//TODO: send NAK
+		return nil, errors.New("NAK not implemented")
 	}
 	log.Printf("got lease %v", lease)
 
@@ -114,9 +126,11 @@ func (s *Server) HandleListen(listen *Listen) error {
 		return err
 	}
 	s.listeners = append(s.listeners, listener)
+	log.Printf("starting server %v", listener)
 	go func() {
 		err = listener.Serve()
 		log.Printf("exited server %v: %s", s, err)
+		//TODO: panic if exited unexpectedly
 	}()
 	return nil
 }

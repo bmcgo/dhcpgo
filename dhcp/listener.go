@@ -108,7 +108,6 @@ func (l *Listener) handleRequest(req *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, error) {
 }
 
 func (l *Listener) Serve() error {
-	log.Printf("starting server %v", l)
 	defer l.responder.Close()
 	return l.server.Serve()
 }

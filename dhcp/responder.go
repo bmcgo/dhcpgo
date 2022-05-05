@@ -85,7 +85,7 @@ func (r *DefaultResponderFactory) NewResponder(listen *Listen) (Responder, error
 }
 
 func (r *SocketResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
-	if req.GatewayIPAddr.Equal(net.IPv4zero) {
+	if req.GatewayIPAddr == nil || req.GatewayIPAddr.Equal(net.IPv4zero) {
 		return r.sendBroadcast(resp)
 	}
 	return r.sendUnicast(resp, peer)

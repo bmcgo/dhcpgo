@@ -15,7 +15,9 @@ type FakeDHCPServer struct {
 type FakeDHCPServerFactory struct {
 	fakeDHCPServer *FakeDHCPServer
 }
-type FakeResponderFactory struct{}
+type FakeResponderFactory struct {
+	responder *FakeResponder
+}
 
 func (f *FakeDHCPServerFactory) NewServer(listenInterface string, listenAddress string, handler server4.Handler) (DHCPv4Server, error) {
 	f.fakeDHCPServer.handler = handler
@@ -32,6 +34,10 @@ type FakeResponder struct {
 	calls []ResponderSendCall
 }
 
+func NewFakeResponder() *FakeResponder {
+	return &FakeResponder{calls: make([]ResponderSendCall, 0)}
+}
+
 func (f *FakeResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
 	f.calls = append(f.calls, ResponderSendCall{
 		req:  req,
@@ -44,10 +50,11 @@ func (f *FakeResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.A
 func (f *FakeResponder) Close() {}
 
 func (f *FakeResponderFactory) NewResponder(listen *Listen) (Responder, error) {
-	return &FakeResponder{calls: make([]ResponderSendCall, 0)}, nil
+	return f.responder, nil
 }
 
 func (f *FakeDHCPServer) Serve() error {
+	time.Sleep(time.Hour)
 	return nil
 }
 
@@ -97,9 +104,10 @@ func (f *FakePacketConn) Close() error {
 
 func TestNewServer(t *testing.T) {
 	fs := &FakeDHCPServer{}
+	responder := NewFakeResponder()
 	s := NewServer(ServerConfig{
 		DHCPv4ServerFactory: &FakeDHCPServerFactory{fakeDHCPServer: fs},
-		ResponderFactory:    &FakeResponderFactory{},
+		ResponderFactory:    &FakeResponderFactory{responder: responder},
 	})
 	err := s.HandleListen(&Listen{
 		Interface: "eth0",
@@ -107,8 +115,20 @@ func TestNewServer(t *testing.T) {
 		Laddr:     "10.1.1.1",
 	})
 	assertNoError(t, err)
-	defer s.Close()
 	assertTrue(t, fs.handler != nil)
+	sn := &Subnet{
+		Subnet:     "192.168.10.0/24",
+		RangeFrom:  "192.168.10.100",
+		RangeTo:    "192.168.10.200",
+		Gateway:    "192.168.10.1",
+		DNS:        []string{"1.1.1.1", "2.2.2.2"},
+		Options:    nil,
+	}
+	_, err = InitializeSubnet(sn)
+	assertNoError(t, err)
+	err = s.HandleSubnet(sn)
+	assertNoError(t, err)
+
 	req := &dhcpv4.DHCPv4{
 		OpCode:         dhcpv4.OpcodeBootRequest,
 		HWType:         iana.HWTypeEthernet,
@@ -119,7 +139,7 @@ func TestNewServer(t *testing.T) {
 		ClientIPAddr:   nil,
 		YourIPAddr:     nil,
 		ServerIPAddr:   nil,
-		GatewayIPAddr:  nil,
+		GatewayIPAddr:  net.ParseIP("192.168.10.1"),
 		ClientHWAddr:   net.HardwareAddr{1, 2, 3, 4, 5, 6},
 		ServerHostName: "",
 		BootFileName:   "",
@@ -127,4 +147,7 @@ func TestNewServer(t *testing.T) {
 	}
 	req.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeDiscover))
 	fs.handler(&FakePacketConn{}, &FakeNetAddr{}, req)
+	assertTrue(t, len(responder.calls) == 1)
+	resp := responder.calls[0].resp
+	assertEqual(t, dhcpv4.MessageTypeOffer, resp.MessageType())
 }

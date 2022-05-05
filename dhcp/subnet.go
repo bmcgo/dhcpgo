@@ -36,10 +36,15 @@ type Subnet struct {
 
 	iPFrom     IPv4
 	iPTo       IPv4
+	ipNet      net.IPNet
 	leaseTime  time.Duration
 	currentIP  IPv4
 	leaseCache map[string]*Lease
 	netMask    string
+}
+
+func (s *Subnet) Contains(ip net.IP) bool {
+	return s.ipNet.Contains(ip)
 }
 
 func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
@@ -67,50 +72,56 @@ func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
 	if err != nil {
 		return nil, err
 	}
-	subnet.netMask = net.IP(net.CIDRMask(int(prefixLength), 32)).String()
+	ipAddr := net.ParseIP(sn[0])
+	ipMask := net.CIDRMask(int(prefixLength), 32)
+	subnet.ipNet = net.IPNet{
+		IP:   ipAddr,
+		Mask: ipMask,
+	}
+	subnet.netMask = net.IP(ipMask).String()
 	return subnet, nil
 }
 
-func (r *Subnet) incrementCurrentIP() {
-	r.currentIP.Inc()
-	if r.currentIP > r.iPTo {
-		r.currentIP = r.iPFrom
+func (s *Subnet) incrementCurrentIP() {
+	s.currentIP.Inc()
+	if s.currentIP > s.iPTo {
+		s.currentIP = s.iPFrom
 	}
 }
 
-func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
+func (s *Subnet) GetLeaseForMAC(mac string) *Lease {
 	var (
 		lease       *Lease
 		oldestLease *Lease
 		ok          bool
 	)
 
-	lease, ok = r.leaseCache[mac]
+	lease, ok = s.leaseCache[mac]
 	if ok {
 		return lease
 	}
 
-	if r.currentIP == 0 {
-		r.currentIP = r.iPFrom
+	if s.currentIP == 0 {
+		s.currentIP = s.iPFrom
 	} else {
-		r.incrementCurrentIP()
+		s.incrementCurrentIP()
 	}
-	expiredTime := time.Now().Add(-r.leaseTime)
-	firstIp := r.currentIP
+	expiredTime := time.Now().Add(-s.leaseTime)
+	firstIp := s.currentIP
 	for {
-		lease, ok = r.leaseCache[r.currentIP.String()]
+		lease, ok = s.leaseCache[s.currentIP.String()]
 		if !ok {
 			lease = &Lease{
-				IP:         r.currentIP.String(),
+				IP:         s.currentIP.String(),
 				LastUpdate: time.Now(),
-				Options:    r.Options,
-				NetMask:    r.netMask,
-				Gateway:    r.Gateway,
-				DNS:        r.DNS,
+				Options:    s.Options,
+				NetMask:    s.netMask,
+				Gateway:    s.Gateway,
+				DNS:        s.DNS,
 				LeaseTime:  defaultLeaseTime, //TODO
 			}
-			r.leaseCache[lease.IP] = lease
-			r.leaseCache[mac] = lease
+			s.leaseCache[lease.IP] = lease
+			s.leaseCache[mac] = lease
 			return lease
 		}
 		//TODO: check for ACK
@@ -123,8 +134,8 @@ func (r *Subnet) GetLeaseForMAC(mac string) *Lease {
 				}
 			}
 		}
-		r.incrementCurrentIP()
-		if firstIp == r.currentIP {
+		s.incrementCurrentIP()
+		if firstIp == s.currentIP {
 			if oldestLease != nil {
 				return oldestLease
 			} else {
