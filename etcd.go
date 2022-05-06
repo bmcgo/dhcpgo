@@ -64,18 +64,18 @@ func NewEtcdClient(ctx context.Context, c *EtcdClientConfig, timeout time.Durati
 	return client, client.client.Sync(ct)
 }
 
-func (c *EtcdClient) processListens(ctx context.Context, handler dhcp.ConfigWatchHandler) error {
+func (c *EtcdClient) processListens(ctx context.Context, handler func(*dhcp.Listen) error) error {
 	resp, err := c.client.Get(ctx, c.prefixConfigListen, clientv3.WithPrefix())
 	if err != nil {
 		return fmt.Errorf("failed to list config prefix: %s", err)
 	}
 	for _, kv := range resp.Kvs {
-		s := &dhcp.Listen{}
-		err = json.Unmarshal(kv.Value, s)
+		l := &dhcp.Listen{}
+		err = json.Unmarshal(kv.Value, l)
 		if err != nil {
 			log.Printf("failed to unmarshal listener %q", kv.Key)
 		} else {
-			err = handler.HandleListen(s)
+			err = handler(l)
 			if err != nil {
 				log.Printf("error handling listener %q, %s", kv.Key, err)
 			}
@@ -84,7 +84,7 @@ func (c *EtcdClient) processListens(ctx context.Context, handler dhcp.ConfigWatc
 	return nil
 }
 
-func (c *EtcdClient) processSubnets(ctx context.Context, handler dhcp.ConfigWatchHandler) error {
+func (c *EtcdClient) processSubnets(ctx context.Context, handler func(*dhcp.Subnet) error) error {
 	resp, err := c.client.Get(ctx, c.prefixConfigSubnet, clientv3.WithPrefix())
 	if err != nil {
 		return fmt.Errorf("failed to list config prefix: %s", err)
@@ -99,7 +99,7 @@ func (c *EtcdClient) processSubnets(ctx context.Context, handler dhcp.ConfigWatc
 			if err != nil {
 				return err
 			}
-			err = handler.HandleSubnet(s)
+			err = handler(s)
 			if err != nil {
 				log.Printf("error handling subnet %q, %s", kv.Key, err)
 			}
@@ -108,14 +108,14 @@ func (c *EtcdClient) processSubnets(ctx context.Context, handler dhcp.ConfigWatc
 	return nil
 }
 
-func (c *EtcdClient) WatchConfig(ctx context.Context, handler dhcp.ConfigWatchHandler) {
+func (c *EtcdClient) WatchConfig(ctx context.Context, server *dhcp.Server) {
 	var err error
 	log.Printf("Watching config with prefix: %s", c.prefix)
-	err = c.processListens(ctx, handler)
+	err = c.processListens(ctx, server.HandleListen)
 	if err != nil {
 		log.Println(err)
 	}
-	err = c.processSubnets(ctx, handler)
+	err = c.processSubnets(ctx, server.HandleSubnet)
 	if err != nil {
 		log.Println(err)
 	}

@@ -43,7 +43,7 @@ func (l Listener) String() string {
 }
 
 func NewListener(listen *Listen, handler ResponseGetter, serverFactory DHCPv4ServerFactory, responderFactory ResponderFactory) (*Listener, error) {
-		responder, err := responderFactory.NewResponder(listen)
+	responder, err := responderFactory.NewResponder(listen)
 	if err != nil {
 		return nil, err
 	}
@@ -75,9 +75,17 @@ func (l *Listener) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv
 		log.Println(err)
 		return
 	}
-	err = l.responder.Send(resp, req, peer)
+	log.Println(resp.ServerIPAddr)
+	if req.GatewayIPAddr == nil || req.GatewayIPAddr.Equal(net.IPv4zero) {
+		err = l.responder.SendBroadcast(resp)
+		if err != nil {
+			log.Printf("failed to send broadcast dhcp response: %s", err)
+		}
+		return
+	}
+	err = l.responder.SendUnicast(resp, peer)
 	if err != nil {
-		log.Printf("failed to send dhcp response: %s", err)
+		log.Printf("failed to send unicast dhcp response: %s", err)
 	}
 }
 

@@ -17,7 +17,8 @@ type ResponderFactory interface {
 
 type Responder interface {
 	Close()
-	Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error
+	SendUnicast(resp *dhcpv4.DHCPv4, peer net.Addr) error
+	SendBroadcast(resp *dhcpv4.DHCPv4) error
 }
 
 type SocketResponder struct {
@@ -32,7 +33,7 @@ type SocketResponder struct {
 	ifname string
 }
 
-type DefaultResponderFactory struct {}
+type DefaultResponderFactory struct{}
 
 func (r *DefaultResponderFactory) NewResponder(listen *Listen) (Responder, error) {
 	iface, err := net.InterfaceByName(listen.Interface)
@@ -84,23 +85,17 @@ func (r *DefaultResponderFactory) NewResponder(listen *Listen) (Responder, error
 	return responder, nil
 }
 
-func (r *SocketResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
-	if req.GatewayIPAddr == nil || req.GatewayIPAddr.Equal(net.IPv4zero) {
-		return r.sendBroadcast(resp)
-	}
-	return r.sendUnicast(resp, peer)
-}
-
-func (r *SocketResponder) sendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
+func (r *SocketResponder) SendUnicast(resp *dhcpv4.DHCPv4, target net.Addr) error {
 	d, err := net.Dial("udp", target.String())
 	if err != nil {
 		return err
 	}
+	defer d.Close()
 	_, err = d.Write(resp.ToBytes())
 	return err
 }
 
-func (r *SocketResponder) sendBroadcast(resp *dhcpv4.DHCPv4) error {
+func (r *SocketResponder) SendBroadcast(resp *dhcpv4.DHCPv4) error {
 	r.eth.DstMAC = resp.ClientHWAddr
 	r.ip.SrcIP = resp.ServerIPAddr
 	r.ip.DstIP = resp.YourIPAddr

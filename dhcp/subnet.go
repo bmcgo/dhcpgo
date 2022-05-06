@@ -3,6 +3,7 @@ package dhcp
 import (
 	"errors"
 	"fmt"
+	"github.com/insomniacslk/dhcp/dhcpv4"
 	"net"
 	"strconv"
 	"strings"
@@ -22,7 +23,6 @@ type Lease struct {
 	Options   []Option `json:"options,omitempty"`
 	LeaseTime int      `json:"leaseTime,omitempty"`
 
-	Subnet     string    `json:"subnet"`
 	LastUpdate time.Time `json:"lastUpdate"`
 }
 
@@ -33,11 +33,11 @@ type Subnet struct {
 	Gateway   string   `json:"gateway"`
 	DNS       []string `json:"dns"`
 	Options   []Option `json:"options"`
+	LeaseTime int      `json:"leaseTime"`
 
 	iPFrom     IPv4
 	iPTo       IPv4
 	ipNet      net.IPNet
-	leaseTime  time.Duration
 	currentIP  IPv4
 	leaseCache map[string]*Lease
 	netMask    string
@@ -61,8 +61,8 @@ func InitializeSubnet(subnet *Subnet) (*Subnet, error) {
 		return nil, errors.New("from > to")
 	}
 	subnet.leaseCache = make(map[string]*Lease)
-	if subnet.leaseTime == 0 {
-		subnet.leaseTime = defaultLeaseTime
+	if subnet.LeaseTime == 0 {
+		subnet.LeaseTime = defaultLeaseTime
 	}
 	sn := strings.Split(subnet.Subnet, "/")
 	if len(sn) != 2 {
@@ -89,24 +89,26 @@ func (s *Subnet) incrementCurrentIP() {
 	}
 }
 
-func (s *Subnet) GetLeaseForMAC(mac string) *Lease {
+func (s *Subnet) GetLeaseForMAC(req *dhcpv4.DHCPv4) *Lease {
 	var (
 		lease       *Lease
 		oldestLease *Lease
 		ok          bool
 	)
-
+	mac := req.ClientHWAddr.String()
 	lease, ok = s.leaseCache[mac]
 	if ok {
 		return lease
 	}
+
+	//TODO: check requested address
 
 	if s.currentIP == 0 {
 		s.currentIP = s.iPFrom
 	} else {
 		s.incrementCurrentIP()
 	}
-	expiredTime := time.Now().Add(-s.leaseTime)
+	expiredTime := time.Now().Add(-time.Second * time.Duration(s.LeaseTime))
 	firstIp := s.currentIP
 	for {
 		lease, ok = s.leaseCache[s.currentIP.String()]
@@ -118,7 +120,7 @@ func (s *Subnet) GetLeaseForMAC(mac string) *Lease {
 				NetMask:    s.netMask,
 				Gateway:    s.Gateway,
 				DNS:        s.DNS,
-				LeaseTime:  defaultLeaseTime, //TODO
+				LeaseTime:  s.LeaseTime,
 			}
 			s.leaseCache[lease.IP] = lease
 			s.leaseCache[mac] = lease

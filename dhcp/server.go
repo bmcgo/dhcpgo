@@ -1,8 +1,8 @@
 package dhcp
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"log"
 	"net"
@@ -21,33 +21,25 @@ type Option struct {
 	Value string `json:"value"`
 }
 
-type Storage interface {
-	WatchConfig(context.Context, ConfigWatchHandler)
-}
-
 type Server struct {
 	listeners         []*Listener
 	responders        []*Responder
 	subnets           map[string]*Subnet
 	dhcpServerFactory DHCPv4ServerFactory
-	responderFactory ResponderFactory
-}
-
-type ConfigWatchHandler interface {
-	HandleListen(*Listen) error
-	HandleSubnet(*Subnet) error
-	//HandleHost(Host) error //TODO
+	responderFactory  ResponderFactory
 }
 
 type ServerConfig struct {
 	DHCPv4ServerFactory DHCPv4ServerFactory
-	ResponderFactory ResponderFactory
+	ResponderFactory    ResponderFactory
+	HandleLease         func(*Lease) error
 }
 
-func GetDefaultServerConfig() ServerConfig {
+func GetDefaultServerConfig(leaseHandler func(*Lease) error) ServerConfig {
 	return ServerConfig{
 		DHCPv4ServerFactory: &DefaultDHCPServerFactory{},
 		ResponderFactory:    &DefaultResponderFactory{},
+		HandleLease:         leaseHandler,
 	}
 }
 
@@ -56,16 +48,15 @@ func NewServer(config ServerConfig) *Server {
 		listeners:         make([]*Listener, 0),
 		subnets:           make(map[string]*Subnet),
 		dhcpServerFactory: config.DHCPv4ServerFactory,
-		responderFactory: config.ResponderFactory,
+		responderFactory:  config.ResponderFactory,
 	}
 }
 
 func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, error) {
 	var lease *Lease
-	log.Println(req, listen)
 	subnet, ok := s.subnets[listen.Subnet]
 	if ok {
-		lease = subnet.GetLeaseForMAC(req.ClientHWAddr.String())
+		lease = subnet.GetLeaseForMAC(req)
 		if lease == nil {
 			return nil, errors.New("empty lease")
 		}
@@ -73,7 +64,7 @@ func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 		for _, s := range s.subnets {
 			if s.Contains(req.GatewayIPAddr) {
 				log.Printf("found subnet: %v", s)
-				lease = s.GetLeaseForMAC(req.ClientHWAddr.String())
+				lease = s.GetLeaseForMAC(req)
 				break
 			} else {
 				log.Printf("%s not in %s (%s)", req.GatewayIPAddr.String(), s.Subnet, s.ipNet)
@@ -143,7 +134,13 @@ func (s *Server) HandleSubnet(subnet *Subnet) error {
 }
 
 func (s *Server) HandleLease(lease *Lease) error {
-	return nil
+	for _, sn := range s.subnets {
+		if sn.ipNet.Contains(net.ParseIP(lease.IP)) {
+			sn.leaseCache[lease.MAC] = lease
+			return nil
+		}
+	}
+	return fmt.Errorf("subnet for lease not found: %v", lease)
 }
 
 func (s *Server) Close() {

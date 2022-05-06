@@ -1,9 +1,11 @@
 package dhcp
 
 import (
+	"bytes"
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/server4"
 	"github.com/insomniacslk/dhcp/iana"
+	"log"
 	"net"
 	"testing"
 	"time"
@@ -24,26 +26,33 @@ func (f *FakeDHCPServerFactory) NewServer(listenInterface string, listenAddress 
 	return f.fakeDHCPServer, nil
 }
 
-type ResponderSendCall struct {
-	req  *dhcpv4.DHCPv4
+type ResponderSendUnicastCall struct {
 	resp *dhcpv4.DHCPv4
 	peer net.Addr
 }
 
 type FakeResponder struct {
-	calls []ResponderSendCall
+	callsUnicast   []ResponderSendUnicastCall
+	callsBroadcast []dhcpv4.DHCPv4
 }
 
 func NewFakeResponder() *FakeResponder {
-	return &FakeResponder{calls: make([]ResponderSendCall, 0)}
+	return &FakeResponder{
+		callsUnicast:   make([]ResponderSendUnicastCall, 0),
+		callsBroadcast: make([]dhcpv4.DHCPv4, 0),
+	}
 }
 
-func (f *FakeResponder) Send(resp *dhcpv4.DHCPv4, req *dhcpv4.DHCPv4, peer net.Addr) error {
-	f.calls = append(f.calls, ResponderSendCall{
-		req:  req,
+func (f *FakeResponder) SendUnicast(resp *dhcpv4.DHCPv4, peer net.Addr) error {
+	f.callsUnicast = append(f.callsUnicast, ResponderSendUnicastCall{
 		resp: resp,
 		peer: peer,
 	})
+	return nil
+}
+
+func (f *FakeResponder) SendBroadcast(resp *dhcpv4.DHCPv4) error {
+	f.callsBroadcast = append(f.callsBroadcast, *resp)
 	return nil
 }
 
@@ -117,12 +126,13 @@ func TestNewServer(t *testing.T) {
 	assertNoError(t, err)
 	assertTrue(t, fs.handler != nil)
 	sn := &Subnet{
-		Subnet:     "192.168.10.0/24",
-		RangeFrom:  "192.168.10.100",
-		RangeTo:    "192.168.10.200",
-		Gateway:    "192.168.10.1",
-		DNS:        []string{"1.1.1.1", "2.2.2.2"},
-		Options:    nil,
+		Subnet:    "192.168.10.0/24",
+		RangeFrom: "192.168.10.100",
+		RangeTo:   "192.168.10.200",
+		Gateway:   "192.168.10.1",
+		DNS:       []string{"1.1.1.1", "2.2.2.2"},
+		LeaseTime: 3600,
+		Options:   nil,
 	}
 	_, err = InitializeSubnet(sn)
 	assertNoError(t, err)
@@ -130,24 +140,19 @@ func TestNewServer(t *testing.T) {
 	assertNoError(t, err)
 
 	req := &dhcpv4.DHCPv4{
-		OpCode:         dhcpv4.OpcodeBootRequest,
-		HWType:         iana.HWTypeEthernet,
-		HopCount:       0,
-		TransactionID:  dhcpv4.TransactionID{},
-		NumSeconds:     0,
-		Flags:          0,
-		ClientIPAddr:   nil,
-		YourIPAddr:     nil,
-		ServerIPAddr:   nil,
-		GatewayIPAddr:  net.ParseIP("192.168.10.1"),
-		ClientHWAddr:   net.HardwareAddr{1, 2, 3, 4, 5, 6},
-		ServerHostName: "",
-		BootFileName:   "",
-		Options:        nil,
+		OpCode:        dhcpv4.OpcodeBootRequest,
+		HWType:        iana.HWTypeEthernet,
+		TransactionID: dhcpv4.TransactionID{1, 2, 3, 4},
+		GatewayIPAddr: net.ParseIP("192.168.10.1"),
+		ClientHWAddr:  net.HardwareAddr{1, 2, 3, 4, 5, 6},
 	}
 	req.UpdateOption(dhcpv4.OptMessageType(dhcpv4.MessageTypeDiscover))
 	fs.handler(&FakePacketConn{}, &FakeNetAddr{}, req)
-	assertTrue(t, len(responder.calls) == 1)
-	resp := responder.calls[0].resp
+	assertTrue(t, len(responder.callsUnicast) == 1)
+	resp := responder.callsUnicast[0].resp
 	assertEqual(t, dhcpv4.MessageTypeOffer, resp.MessageType())
+	assertEqual(t, "10.1.1.1", resp.ServerIPAddr.String())
+	assertTrue(t, 0 == bytes.Compare([]byte{0, 0, 14, 16}, resp.Options.Get(dhcpv4.OptionIPAddressLeaseTime)))
+	assertEqual(t, "192.168.10.100", resp.YourIPAddr.String())
+	log.Println(resp)
 }

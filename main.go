@@ -55,7 +55,12 @@ func main() {
 		return
 	}
 
-	server := dhcp.NewServer(dhcp.GetDefaultServerConfig())
+	server := dhcp.NewServer(dhcp.GetDefaultServerConfig(HandleLease))
 	etcd.WatchConfig(context.Background(), server)
 	log.Printf("Exited")
+}
+
+func HandleLease(lease *dhcp.Lease) error {
+	//TODO: etcd
+	return nil
 }
