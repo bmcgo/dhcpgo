@@ -135,6 +135,10 @@ func (s *Server) HandleListen(listen *Listen) error {
 
 func (s *Server) HandleSubnet(subnet *Subnet) error {
 	var err error
+	subnet, err = InitializeSubnet(subnet)
+	if err != nil {
+		return err
+	}
 	s.subnets[subnet.Subnet] = subnet
 	log.Printf("Serving subnet %v", subnet)
 	return err
