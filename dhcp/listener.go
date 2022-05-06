@@ -75,7 +75,6 @@ func (l *Listener) Handler(conn net.PacketConn, peer net.Addr, req *dhcpv4.DHCPv
 		log.Println(err)
 		return
 	}
-	log.Println(resp.ServerIPAddr)
 	if req.GatewayIPAddr == nil || req.GatewayIPAddr.Equal(net.IPv4zero) {
 		err = l.responder.SendBroadcast(resp)
 		if err != nil {

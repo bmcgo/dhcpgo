@@ -108,6 +108,13 @@ func (s *Server) getLease(req *dhcpv4.DHCPv4, listen *Listen) (*dhcpv4.DHCPv4, e
 
 	//TODO: option 54 server id
 	resp.UpdateOption(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(54), Value: dhcpv4.IP{resp.GatewayIPAddr[0], resp.GatewayIPAddr[1], resp.GatewayIPAddr[2], resp.GatewayIPAddr[3]}})
+
+	if resp.MessageType() == dhcpv4.MessageTypeAck {
+		err = s.HandleLease(lease)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return resp, nil
 }
 
@@ -141,6 +148,19 @@ func (s *Server) HandleLease(lease *Lease) error {
 		}
 	}
 	return fmt.Errorf("subnet for lease not found: %v", lease)
+}
+
+func (s *Server) StopListen(subnet string) {
+	for _, l := range s.listeners {
+		if l.listen.Subnet == subnet {
+			err := l.server.Close()
+			if err != nil {
+				log.Printf("Failed to stop server: %s", err)
+			}
+			return
+		}
+	}
+	log.Printf("Listener for subnet %q not found", subnet)
 }
 
 func (s *Server) Close() {
